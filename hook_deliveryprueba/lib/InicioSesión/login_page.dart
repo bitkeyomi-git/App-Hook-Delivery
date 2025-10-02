@@ -234,7 +234,7 @@ class _LoginPageState extends State<LoginPage> {
               ),
               const SizedBox(height: 30.0),
               Text(
-                lang == AppLanguage.es ? 'Bienvenido HOOK OBS' : 'Welcome to HOOK OBS',
+                lang == AppLanguage.es ? 'Bienvenido HOOK Delivery' : 'Welcome to HOOK Delivery',
                 style: TextStyle(
                   fontSize: 28.0,
                   fontWeight: FontWeight.bold,

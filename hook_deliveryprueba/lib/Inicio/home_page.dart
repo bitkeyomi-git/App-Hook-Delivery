@@ -8,6 +8,8 @@ import '../Configuraciones/settings_controller.dart';
 import '../Configuraciones/settings_page.dart';
 import '../InicioSesión/login_page.dart';
 import '../Pagina/website_page.dart';
+import '../Rastreo/tracking_page.dart';
+
 
 class HomePage extends StatefulWidget {
   final Map<String, dynamic> userInfo;
@@ -187,12 +189,14 @@ class _HomePageState extends State<HomePage> {
       _buildProfileScreen(context),           // 0 Perfil
       const SettingsPage(),                   // 1 Configuración
       const WebsitePage(),                    // 2 Sitio Web
+      const TrackShipmentPage(),              // 3 Rastrear Envío
     ];
 
     final titles = [
       lang == AppLanguage.es ? 'Perfil' : 'Profile',
       lang == AppLanguage.es ? 'Configuración' : 'Settings',
       lang == AppLanguage.es ? 'Sitio Web' : 'Website',
+      lang == AppLanguage.es ? 'Rastrear Envío' : 'Track Shipment',
     ];
 
     final drawerOptions = [
@@ -211,6 +215,9 @@ class _HomePageState extends State<HomePage> {
         'index': 2,
         'icon': Icons.language,
       },
+      {'label': lang == AppLanguage.es ? 'Rastreo' : 'Tracking', 
+        'index': 3, 
+        'icon': Icons.local_shipping}
     ];
 
     return Scaffold(
@@ -273,6 +280,10 @@ class _HomePageState extends State<HomePage> {
           NavigationDestination(
             icon: Icon(Icons.language, color: mainColor),
             label: lang == AppLanguage.es ? 'Sitio Web' : 'Website',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.local_shipping, color: mainColor),
+            label: lang == AppLanguage.es ? 'Rastreo' : 'Tracking',
           ),
         ],
       ),
