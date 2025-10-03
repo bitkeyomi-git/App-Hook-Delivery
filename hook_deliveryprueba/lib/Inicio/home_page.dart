@@ -10,7 +10,6 @@ import '../InicioSesión/login_page.dart';
 import '../Pagina/website_page.dart';
 import '../Rastreo/tracking_page.dart';
 
-
 class HomePage extends StatefulWidget {
   final Map<String, dynamic> userInfo;
   const HomePage({super.key, required this.userInfo});
@@ -28,7 +27,9 @@ class _HomePageState extends State<HomePage> {
     final settings = context.watch<SettingsController>();
     final lang = settings.language;
     final isDark = settings.theme == AppTheme.blueDark;
-    final mainColor = isDark ? const Color(0xFF29B6F6) : const Color(0xFFF20A32);
+    final mainColor = isDark
+        ? const Color(0xFF29B6F6)
+        : const Color(0xFFF20A32);
 
     return ListView(
       padding: const EdgeInsets.all(20),
@@ -36,7 +37,9 @@ class _HomePageState extends State<HomePage> {
         Card(
           elevation: 4,
           color: isDark ? Colors.grey[900] : const Color(0xfff8f4fa),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           child: ListTile(
             leading: Icon(Icons.person, size: 30, color: mainColor),
             title: Text(
@@ -46,7 +49,10 @@ class _HomePageState extends State<HomePage> {
             subtitle: Text(
               personal['r_user_name'] ??
                   (lang == AppLanguage.es ? 'No disponible' : 'Not available'),
-              style: TextStyle(fontSize: 16, color: isDark ? Colors.white : Colors.black),
+              style: TextStyle(
+                fontSize: 16,
+                color: isDark ? Colors.white : Colors.black,
+              ),
             ),
           ),
         ),
@@ -54,7 +60,9 @@ class _HomePageState extends State<HomePage> {
         Card(
           elevation: 4,
           color: isDark ? Colors.grey[900] : const Color(0xfff8f4fa),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           child: ListTile(
             leading: Icon(Icons.work, size: 30, color: mainColor),
             title: Text(
@@ -64,7 +72,10 @@ class _HomePageState extends State<HomePage> {
             subtitle: Text(
               personal['r_name_role'] ??
                   (lang == AppLanguage.es ? 'No disponible' : 'Not available'),
-              style: TextStyle(fontSize: 16, color: isDark ? Colors.white : Colors.black),
+              style: TextStyle(
+                fontSize: 16,
+                color: isDark ? Colors.white : Colors.black,
+              ),
             ),
           ),
         ),
@@ -72,7 +83,9 @@ class _HomePageState extends State<HomePage> {
         Card(
           elevation: 4,
           color: isDark ? Colors.grey[900] : const Color(0xfff8f4fa),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           child: ListTile(
             leading: Icon(Icons.business, size: 30, color: mainColor),
             title: Text(
@@ -82,7 +95,10 @@ class _HomePageState extends State<HomePage> {
             subtitle: Text(
               personal['r_name_office'] ??
                   (lang == AppLanguage.es ? 'No disponible' : 'Not available'),
-              style: TextStyle(fontSize: 16, color: isDark ? Colors.white : Colors.black),
+              style: TextStyle(
+                fontSize: 16,
+                color: isDark ? Colors.white : Colors.black,
+              ),
             ),
           ),
         ),
@@ -90,7 +106,9 @@ class _HomePageState extends State<HomePage> {
         Card(
           elevation: 4,
           color: isDark ? Colors.grey[900] : const Color(0xfff8f4fa),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           child: ListTile(
             leading: Icon(Icons.badge, size: 30, color: mainColor),
             title: Text(
@@ -100,7 +118,10 @@ class _HomePageState extends State<HomePage> {
             subtitle: Text(
               personal['r_operator'] ??
                   (lang == AppLanguage.es ? 'No disponible' : 'Not available'),
-              style: TextStyle(fontSize: 16, color: isDark ? Colors.white : Colors.black),
+              style: TextStyle(
+                fontSize: 16,
+                color: isDark ? Colors.white : Colors.black,
+              ),
             ),
           ),
         ),
@@ -121,7 +142,7 @@ class _HomePageState extends State<HomePage> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(Icons.logout, color: mainColor),
-                const SizedBox(width: 10),
+                const SizedBox(height: 10),
                 Text(
                   AppLocalizations.t('logout', lang),
                   style: TextStyle(
@@ -147,7 +168,9 @@ class _HomePageState extends State<HomePage> {
         return AlertDialog(
           title: Text(AppLocalizations.t('logout', lang)),
           content: Text(
-            lang == AppLanguage.es ? '¿Volver a iniciar sesión?' : 'Do you want to login again?',
+            lang == AppLanguage.es
+                ? '¿Volver a iniciar sesión?'
+                : 'Do you want to login again?',
           ),
           actions: <Widget>[
             TextButton(
@@ -183,13 +206,17 @@ class _HomePageState extends State<HomePage> {
     final settings = context.watch<SettingsController>();
     final isDark = settings.theme == AppTheme.blueDark;
     final lang = settings.language;
-    final mainColor = isDark ? const Color(0xFF29B6F6) : const Color(0xFFF20A32);
+    final mainColor = isDark
+        ? const Color(0xFF29B6F6)
+        : const Color(0xFFF20A32);
 
     final screens = [
-      _buildProfileScreen(context),           // 0 Perfil
-      const SettingsPage(),                   // 1 Configuración
-      const WebsitePage(),                    // 2 Sitio Web
-      const TrackShipmentPage(),              // 3 Rastrear Envío
+      _buildProfileScreen(context),
+      const SettingsPage(),
+      const WebsitePage(),
+      TrackShipmentPage(
+        userInfo: widget.userInfo,
+      ), // <-- antes: const TrackShipmentPage()
     ];
 
     final titles = [
@@ -215,9 +242,11 @@ class _HomePageState extends State<HomePage> {
         'index': 2,
         'icon': Icons.language,
       },
-      {'label': lang == AppLanguage.es ? 'Rastreo' : 'Tracking', 
-        'index': 3, 
-        'icon': Icons.local_shipping}
+      {
+        'label': lang == AppLanguage.es ? 'Rastreo' : 'Tracking',
+        'index': 3,
+        'icon': Icons.local_shipping,
+      },
     ];
 
     return Scaffold(
