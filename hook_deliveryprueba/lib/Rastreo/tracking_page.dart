@@ -8,6 +8,7 @@ import '../Configuraciones/app_localizations.dart';
 import '../Configuraciones/settings_controller.dart';
 import '../Inicio/home_page.dart' show kIsWeb;
 import 'package:flutter/foundation.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 
 const String _TRACK_URL =
     'https://api-ticket-6wly.onrender.com/get-servicio-info';
@@ -37,13 +38,11 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
 
   bool _loading = false;
   String? _error;
-  Map<String, dynamic>? _res; // primer objeto dentro de "result"
+  Map<String, dynamic>? _res;
 
-  String? _selectedOfficeAction = 'Recibió'; // default del dropdown
-
-  // --- Estatus del servicio ---
-  String? _selectedStatus; // lo que el usuario elija en el pill
-  bool _savingStatus = false; // loading para guardar
+  String? _selectedOfficeAction = 'Recibió';
+  String? _selectedStatus;
+  bool _savingStatus = false;
 
   final List<String> _statusOptions = const [
     'pendiente',
@@ -52,12 +51,8 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
     'cancelado',
   ];
 
-  // Ya no quita tildes; solo pasa a minúsculas.
-  String _normalizeStatus(String s) {
-    return s.trim().toLowerCase();
-  }
+  String _normalizeStatus(String s) => s.trim().toLowerCase();
 
-  // Mapea la acción de oficina a una clave corta para el backend
   String? _statusFromOfficeAction(String? action) {
     switch ((action ?? '').toLowerCase()) {
       case 'recibió':
@@ -81,7 +76,6 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
     super.dispose();
   }
 
-  // ===== Helpers =====
   String L(String es, String en) {
     final lang = context.read<SettingsController>().language;
     return lang == AppLanguage.es ? es : en;
@@ -93,7 +87,6 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
     return isDark ? const Color(0xFF29B6F6) : const Color(0xFFF20A32);
   }
 
-  // Sólo números, cualquier longitud
   bool _isValid(String s) => RegExp(r'^\d+$').hasMatch(s);
 
   Future<void> _paste() async {
@@ -151,7 +144,6 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
       }
 
       final json = jsonDecode(resp.body);
-      // Se espera: { status: "ok", result: [ {...} ] }
       if (json is! Map || json['status'] != 'ok') {
         throw Exception('Respuesta inesperada: ${resp.body}');
       }
@@ -162,8 +154,6 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
       }
 
       _res = Map<String, dynamic>.from(list.first as Map);
-
-      // Inicializa el estatus seleccionado con el que venga del backend
       _selectedStatus = (_res!['r_status'] as String?)?.toLowerCase();
 
       if (mounted) setState(() {});
@@ -186,17 +176,14 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
       return;
     }
 
-    // Si hay acción de oficina, priorízala; si no, usa el estatus elegido/actual
     final officeActionStatus = _statusFromOfficeAction(_selectedOfficeAction);
     final chosen =
         officeActionStatus ??
         (_selectedStatus ??
             (_res!['r_status']?.toString().toLowerCase() ?? 'pendiente'));
 
-    // Normaliza solo a minúsculas, conservando tildes si las hubiera
     final statusForApi = _normalizeStatus(chosen);
 
-    // Intentar obtener el id de oficina desde los datos del usuario
     final officeId =
         personal?['id_office'] ??
         personal?['r_id_office'] ??
@@ -204,7 +191,6 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
 
     setState(() => _savingStatus = true);
     try {
-      // Armado del body. Enviamos id_office SOLO si es acción de oficina.
       final body = <String, dynamic>{
         "id": id,
         "status": '${statusForApi} - ${personal?['r_name_office'] ?? '-'}',
@@ -226,8 +212,6 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
         throw Exception('HTTP ${resp.statusCode}: ${resp.body}');
       }
 
-      // Refleja en UI: si fue acción de oficina NO cambiamos el status visible;
-      // si fue un status normal, sí lo actualizamos.
       setState(() {
         if (officeActionStatus == null) {
           _selectedStatus = statusForApi;
@@ -246,11 +230,10 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
       if (mounted) setState(() => _savingStatus = false);
     }
 
-    // === Envío de correos UNO A UNO (sin cambiar tu endpoint) ===
     Future<void> _postEmail(String email) async {
       if (email.isEmpty) return;
       final body = {
-        "to": email, // tu endpoint espera UNO
+        "to": email,
         "user_name": personal?['r_name_office'] ?? 'Hook Delivery',
         "service_delivery_id":
             "${_res?['r_id_service_and_delivery_data'] ?? '-'}",
@@ -261,7 +244,9 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
       };
 
       final resp = await http.post(
-        Uri.parse('https://api-ticket-6wly.onrender.com/send-alert-package-plm'),
+        Uri.parse(
+          'https://api-ticket-6wly.onrender.com/send-alert-package-plm',
+        ),
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
@@ -277,16 +262,11 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
     }
 
     try {
-      final emails =
-          <String>[
-                (_res?['to'] ?? '').toString(),
-                (_res?['r_sender_email'] ?? '').toString(),
-                (_res?['r_recipient_email'] ?? '').toString(),
-              ]
-              .map((e) => e.trim())
-              .where((e) => e.contains('@'))
-              .toSet() // evitar duplicados
-              .toList();
+      final emails = <String>[
+        (_res?['to'] ?? '').toString(),
+        (_res?['r_sender_email'] ?? '').toString(),
+        (_res?['r_recipient_email'] ?? '').toString(),
+      ].map((e) => e.trim()).where((e) => e.contains('@')).toSet().toList();
 
       for (final email in emails) {
         await _postEmail(email);
@@ -301,45 +281,172 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
   void _showSnack(String msg) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 
-  // ===== Widgets pequeños =====
-  Widget _chip(String title, IconData icon) => Container(
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-    ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 18),
-        const SizedBox(width: 8),
-        Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+  // ====== SCAN: QR/Código de barras para r_id_service_and_delivery_data ======
+  void _handleScannedValue(String raw) {
+    try {
+      final v = jsonDecode(raw);
+      if (v is Map && v['r_id_service_and_delivery_data'] != null) {
+        _guideCtrl.text = '${v['r_id_service_and_delivery_data']}';
+        _track();
+        return;
+      }
+    } catch (_) {}
+
+    final m = RegExp(r'\d{4,}').firstMatch(raw);
+    if (m != null) {
+      _guideCtrl.text = m.group(0)!;
+      _track();
+      return;
+    }
+
+    if (RegExp(r'^\d+$').hasMatch(raw)) {
+      _guideCtrl.text = raw;
+      _track();
+      return;
+    }
+
+    _showSnack('Código inválido. No se encontró un ID numérico.');
+  }
+
+  Future<void> _openScanner() async {
+    bool handled = false;
+    final controller = MobileScannerController(
+      detectionSpeed: DetectionSpeed.noDuplicates,
+      // facing: CameraFacing.back, // opcional
+      formats: const [
+        BarcodeFormat.qrCode,
+        BarcodeFormat.code128,
+        BarcodeFormat.code39,
+        BarcodeFormat.ean13,
+        BarcodeFormat.ean8,
+        BarcodeFormat.upcA,
+        BarcodeFormat.upcE,
+        BarcodeFormat.code93,
+        BarcodeFormat.itf,
+        BarcodeFormat.codabar,
+        BarcodeFormat.dataMatrix,
+        BarcodeFormat.pdf417,
       ],
+    );
+
+    await showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (_) => Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(
+          title: const Text('Escanear código'),
+          backgroundColor: Colors.black,
+          foregroundColor: Colors.white,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ],
+        ),
+        body: MobileScanner(
+          controller: controller,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error) {
+            final code = error.errorCode;
+            final msg = code == MobileScannerErrorCode.permissionDenied
+                ? 'Permiso de cámara denegado.'
+                : 'Error de cámara: ${code.name}';
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(msg, style: const TextStyle(color: Colors.white)),
+              ),
+            );
+          },
+          onDetect: (capture) {
+            if (handled) return;
+            final codes = capture.barcodes;
+            final raw = codes.isNotEmpty ? (codes.first.rawValue ?? '') : '';
+            if (raw.isEmpty) return;
+            handled = true;
+            Navigator.of(context).pop();
+            _handleScannedValue(raw);
+          },
+        ),
+      ),
+    );
+  }
+
+  // ====== RESPONSIVE UTILS ======
+  double rs(BuildContext context, double base) {
+    final w = MediaQuery.sizeOf(context).width;
+    if (w <= 340) return base * 0.85;
+    if (w <= 380) return base * 0.92;
+    if (w <= 420) return base * 0.98;
+    return base;
+  }
+
+  double fs(BuildContext context, double base) {
+    final t = MediaQuery.textScaleFactorOf(context).clamp(1.0, 1.15);
+    final w = MediaQuery.sizeOf(context).width;
+    final shrink = w <= 360 ? 0.94 : (w <= 400 ? 0.97 : 1.0);
+    return base * t * shrink;
+  }
+
+  Widget _chip(String title, IconData icon) => Builder(
+    builder: (context) => Container(
+      padding: EdgeInsets.all(rs(context, 14)),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(rs(context, 14)),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: rs(context, 18)),
+          SizedBox(width: rs(context, 8)),
+          Text(
+            title,
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: fs(context, 13),
+            ),
+          ),
+        ],
+      ),
     ),
   );
 
-  Widget _kv(String k, String v, {bool bold = false}) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 2),
-    child: Row(
-      children: [
-        Expanded(
-          flex: 4,
-          child: Text(k, style: const TextStyle(fontWeight: FontWeight.w700)),
-        ),
-        Expanded(
-          flex: 6,
-          child: Text(
-            v,
-            style: TextStyle(
-              fontWeight: bold ? FontWeight.w800 : FontWeight.w400,
+  Widget _kv(String k, String v, {bool bold = false}) => Builder(
+    builder: (context) => Padding(
+      padding: EdgeInsets.symmetric(vertical: rs(context, 2)),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 4,
+            child: Text(
+              k,
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: fs(context, 13),
+              ),
             ),
           ),
-        ),
-      ],
+          Expanded(
+            flex: 6,
+            child: Text(
+              v,
+              style: TextStyle(
+                fontWeight: bold ? FontWeight.w800 : FontWeight.w400,
+                fontSize: fs(context, 13),
+              ),
+            ),
+          ),
+        ],
+      ),
     ),
   );
 
   void _showPackagesSheet(List pkgs) {
+    final h = MediaQuery.of(context).size.height;
+    final factor = h < 680 ? 0.88 : 0.75;
     showModalBottomSheet(
       context: context,
       showDragHandle: true,
@@ -348,49 +455,54 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (_) => FractionallySizedBox(
-        heightFactor: 0.75,
+        heightFactor: factor,
         child: ListView.builder(
           padding: const EdgeInsets.all(16),
           itemCount: pkgs.length,
           itemBuilder: (_, i) {
             final p = Map<String, dynamic>.from(pkgs[i] as Map);
-            return Card(
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-                side: BorderSide(
-                  color: Theme.of(context).colorScheme.outlineVariant,
+            return Builder(
+              builder: (context) => Card(
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(rs(context, 14)),
+                  side: BorderSide(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
                 ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '#${p['id_final_package_order'] ?? '-'}',
-                      style: const TextStyle(fontWeight: FontWeight.w900),
-                    ),
-                    const SizedBox(height: 8),
-                    _kv(
-                      L('Descripción', 'Description'),
-                      '${p['package_description'] ?? '-'}',
-                    ),
-                    _kv(L('Concepto', 'Concept'), '${p['concept'] ?? '-'}'),
-                    _kv(L('Peso', 'Weight'), '${p['weight'] ?? '-'}'),
-                    _kv(L('Alto', 'Height'), '${p['height'] ?? '-'}'),
-                    _kv(L('Largo', 'Length'), '${p['length'] ?? '-'}'),
-                    _kv(L('Ancho', 'Width'), '${p['width'] ?? '-'}'),
-                    _kv(
-                      L('Precio por paquete', 'Price per package'),
-                      '${p['price_per_package'] ?? '-'}',
-                    ),
-                    _kv(
-                      L('Total', 'Total'),
-                      '${p['total_price'] ?? '-'}',
-                      bold: true,
-                    ),
-                  ],
+                child: Padding(
+                  padding: EdgeInsets.all(rs(context, 14)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '#${p['id_final_package_order'] ?? '-'}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: fs(context, 15),
+                        ),
+                      ),
+                      SizedBox(height: rs(context, 8)),
+                      _kv(
+                        L('Descripción', 'Description'),
+                        '${p['package_description'] ?? '-'}',
+                      ),
+                      _kv(L('Concepto', 'Concept'), '${p['concept'] ?? '-'}'),
+                      _kv(L('Peso', 'Weight'), '${p['weight'] ?? '-'}'),
+                      _kv(L('Alto', 'Height'), '${p['height'] ?? '-'}'),
+                      _kv(L('Largo', 'Length'), '${p['length'] ?? '-'}'),
+                      _kv(L('Ancho', 'Width'), '${p['width'] ?? '-'}'),
+                      _kv(
+                        L('Precio por paquete', 'Price per package'),
+                        '${p['price_per_package'] ?? '-'}',
+                      ),
+                      _kv(
+                        L('Total', 'Total'),
+                        '${p['total_price'] ?? '-'}',
+                        bold: true,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );
@@ -407,9 +519,13 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
 
     return Scaffold(
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+        padding: EdgeInsets.fromLTRB(
+          rs(context, 16),
+          rs(context, 10),
+          rs(context, 16),
+          rs(context, 16),
+        ),
         children: [
-          // Buscador
           TextField(
             controller: _guideCtrl,
             focusNode: _focus,
@@ -431,6 +547,11 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButton(
+                    tooltip: L('Escanear', 'Scan'),
+                    icon: const Icon(Icons.camera_alt_outlined),
+                    onPressed: _openScanner,
+                  ),
+                  IconButton(
                     tooltip: L('Pegar', 'Paste'),
                     icon: const Icon(Icons.content_paste),
                     onPressed: _paste,
@@ -443,43 +564,48 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                 ],
               ),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(rs(context, 16)),
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(rs(context, 16)),
                 borderSide: BorderSide(color: _mainColor.withOpacity(0.35)),
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(rs(context, 16)),
                 borderSide: BorderSide(color: _mainColor, width: 2),
               ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 16,
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: rs(context, 14),
+                vertical: rs(context, 14),
               ),
               counterText: '',
             ),
+            style: TextStyle(fontSize: fs(context, 14)),
             onSubmitted: (_) => _track(),
           ),
-          const SizedBox(height: 14),
+          SizedBox(height: rs(context, 12)),
           SizedBox(
-            height: 50,
+            height: rs(context, 46),
             width: double.infinity,
             child: FilledButton(
               style: FilledButton.styleFrom(
                 backgroundColor: _mainColor,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(rs(context, 12)),
                 ),
-                textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                textStyle: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: fs(context, 14),
+                ),
+                padding: EdgeInsets.symmetric(horizontal: rs(context, 12)),
               ),
               onPressed: _loading ? null : _track,
               child: _loading
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
+                  ? SizedBox(
+                      width: rs(context, 20),
+                      height: rs(context, 20),
+                      child: const CircularProgressIndicator(
                         strokeWidth: 2,
                         valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                       ),
@@ -489,24 +615,26 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
           ),
 
           if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(_error!, style: const TextStyle(color: Colors.red)),
+            SizedBox(height: rs(context, 10)),
+            Text(
+              _error!,
+              style: TextStyle(color: Colors.red, fontSize: fs(context, 13)),
+            ),
           ],
 
           if (_res != null) ...[
-            const SizedBox(height: 18),
+            SizedBox(height: rs(context, 16)),
             Card(
               elevation: 0,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: BorderRadius.circular(rs(context, 16)),
                 side: BorderSide(color: cs.outlineVariant),
               ),
               child: Padding(
-                padding: const EdgeInsets.all(18),
+                padding: EdgeInsets.all(rs(context, 16)),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Header título + estado
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -516,33 +644,38 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                             children: [
                               Text(
                                 L('Servicio', 'Service'),
-                                style: const TextStyle(
-                                  fontSize: 20,
+                                style: TextStyle(
+                                  fontSize: fs(context, 18),
                                   fontWeight: FontWeight.w900,
                                 ),
                               ),
-                              const SizedBox(height: 6),
+                              SizedBox(height: rs(context, 4)),
                               Text(
                                 '#${_res!['r_id_service_and_delivery_data'] ?? '-'}',
-                                style: const TextStyle(
-                                  fontSize: 26,
+                                style: TextStyle(
+                                  fontSize: fs(context, 22),
                                   fontWeight: FontWeight.w900,
                                 ),
                               ),
-                              const SizedBox(height: 6),
+                              SizedBox(height: rs(context, 4)),
                               Text(
                                 '${L('Creado', 'Created on')}: ${_fmtDT(_res!['r_created_at_local'])}',
-                                style: TextStyle(color: cs.onSurfaceVariant),
+                                style: TextStyle(
+                                  color: cs.onSurfaceVariant,
+                                  fontSize: fs(context, 12.5),
+                                ),
                               ),
                               if (_res!['r_hora_salida'] != null)
                                 Text(
                                   'Hora Salida: ${_fmtDT(_res!['r_hora_salida'])}',
-                                  style: TextStyle(color: cs.onSurfaceVariant),
+                                  style: TextStyle(
+                                    color: cs.onSurfaceVariant,
+                                    fontSize: fs(context, 12.5),
+                                  ),
                                 ),
                             ],
                           ),
                         ),
-                        // Pill rojo con popup de estatus
                         PopupMenuButton<String>(
                           onSelected: (val) {
                             setState(() => _selectedStatus = val.toLowerCase());
@@ -551,35 +684,40 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                               .map(
                                 (s) => PopupMenuItem<String>(
                                   value: s,
-                                  child: Text(s),
+                                  child: Text(
+                                    s,
+                                    style: TextStyle(fontSize: fs(context, 13)),
+                                  ),
                                 ),
                               )
                               .toList(),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
+                            padding: EdgeInsets.symmetric(
+                              horizontal: rs(context, 10),
+                              vertical: rs(context, 5),
                             ),
                             decoration: BoxDecoration(
                               color: Colors.red.withOpacity(0.18),
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(
+                                rs(context, 12),
+                              ),
                             ),
                             child: Text(
                               ((_selectedStatus ?? _res!['r_status'] ?? '-')
                                       as String)
                                   .toUpperCase(),
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontWeight: FontWeight.w900,
                                 color: Colors.red,
+                                fontSize: fs(context, 12),
                               ),
                             ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
+                    SizedBox(height: rs(context, 12)),
 
-                    // Origen / Destino chips
                     Row(
                       children: [
                         Expanded(
@@ -588,7 +726,7 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                             Icons.person_pin_circle,
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        SizedBox(width: rs(context, 10)),
                         Expanded(
                           child: _chip(
                             '${L('Destino', 'Destination')}\n${_res!['r_destination'] ?? '-'}',
@@ -597,34 +735,33 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 18),
+                    SizedBox(height: rs(context, 14)),
 
-                    // --- Oficina / Acciones ---
                     Card(
                       elevation: 0,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(rs(context, 12)),
                         side: BorderSide(color: cs.outlineVariant),
                       ),
                       child: Padding(
-                        padding: const EdgeInsets.all(16),
+                        padding: EdgeInsets.all(rs(context, 12)),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               L('Oficina', 'Office'),
-                              style: const TextStyle(
-                                fontSize: 16,
+                              style: TextStyle(
+                                fontSize: fs(context, 15),
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
-                            const SizedBox(height: 12),
+                            SizedBox(height: rs(context, 10)),
                             _kv(
                               L('Nombre de la oficina', 'Office name'),
                               '${personal?['r_name_office'] ?? '-'}',
                               bold: true,
                             ),
-                            const SizedBox(height: 16),
+                            SizedBox(height: rs(context, 12)),
                             DropdownButtonFormField<String>(
                               value: _selectedOfficeAction,
                               decoration: InputDecoration(
@@ -633,7 +770,13 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                                   'Office Action',
                                 ),
                                 border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: BorderRadius.circular(
+                                    rs(context, 10),
+                                  ),
+                                ),
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: rs(context, 10),
+                                  vertical: rs(context, 10),
                                 ),
                               ),
                               items: [
@@ -641,18 +784,21 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                                   value: 'Recibió',
                                   child: Text(
                                     'Recibió: ${personal?['r_name_office'] ?? '-'}',
+                                    style: TextStyle(fontSize: fs(context, 13)),
                                   ),
                                 ),
                                 DropdownMenuItem(
                                   value: 'Envió',
                                   child: Text(
                                     'Envió: ${personal?['r_name_office'] ?? '-'}',
+                                    style: TextStyle(fontSize: fs(context, 13)),
                                   ),
                                 ),
                                 DropdownMenuItem(
                                   value: 'Devolvió',
                                   child: Text(
                                     'Devolvió: ${personal?['r_name_office'] ?? '-'}',
+                                    style: TextStyle(fontSize: fs(context, 13)),
                                   ),
                                 ),
                               ],
@@ -663,14 +809,14 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                                 );
                               },
                             ),
-                            const SizedBox(height: 12),
+                            SizedBox(height: rs(context, 10)),
                             Center(
                               child: FilledButton.icon(
                                 icon: _savingStatus
-                                    ? const SizedBox(
-                                        width: 16,
-                                        height: 16,
-                                        child: CircularProgressIndicator(
+                                    ? SizedBox(
+                                        width: rs(context, 16),
+                                        height: rs(context, 16),
+                                        child: const CircularProgressIndicator(
                                           strokeWidth: 2,
                                           color: Colors.white,
                                         ),
@@ -678,22 +824,24 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                                     : const Icon(Icons.save, size: 16),
                                 label: Text(
                                   L('Guardar', 'Save'),
-                                  style: const TextStyle(
-                                    fontSize: 12,
+                                  style: TextStyle(
+                                    fontSize: fs(context, 12.5),
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
                                 style: FilledButton.styleFrom(
                                   backgroundColor: _mainColor,
                                   foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 8,
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: rs(context, 12),
+                                    vertical: rs(context, 8),
                                   ),
                                   shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
+                                    borderRadius: BorderRadius.circular(
+                                      rs(context, 10),
+                                    ),
                                   ),
-                                  minimumSize: const Size(0, 36),
+                                  minimumSize: Size(0, rs(context, 36)),
                                 ),
                                 onPressed: _savingStatus ? null : _saveStatus,
                               ),
@@ -703,7 +851,6 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                       ),
                     ),
 
-                    // Sender / Recipient (dos columnas)
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -713,12 +860,12 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                             children: [
                               Text(
                                 L('Remitente', 'Sender'),
-                                style: const TextStyle(
-                                  fontSize: 16,
+                                style: TextStyle(
+                                  fontSize: fs(context, 15),
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
-                              const SizedBox(height: 8),
+                              SizedBox(height: rs(context, 6)),
                               _kv(
                                 L('Nombre', 'First name'),
                                 '${_res!['r_sender_name'] ?? '-'}',
@@ -736,19 +883,19 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                             ],
                           ),
                         ),
-                        const SizedBox(width: 16),
+                        SizedBox(width: rs(context, 12)),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
                                 L('Destinatario', 'Recipient'),
-                                style: const TextStyle(
-                                  fontSize: 16,
+                                style: TextStyle(
+                                  fontSize: fs(context, 15),
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
-                              const SizedBox(height: 8),
+                              SizedBox(height: rs(context, 6)),
                               _kv(
                                 L('Nombre', 'First name'),
                                 '${_res!['r_recipient_first_name'] ?? '-'}',
@@ -771,9 +918,8 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 18),
+                    SizedBox(height: rs(context, 14)),
 
-                    // Package + Concept
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -783,12 +929,12 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                             children: [
                               Text(
                                 L('Paquete', 'Package'),
-                                style: const TextStyle(
-                                  fontSize: 16,
+                                style: TextStyle(
+                                  fontSize: fs(context, 15),
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
-                              const SizedBox(height: 8),
+                              SizedBox(height: rs(context, 6)),
                               _kv(
                                 L('Descripción', 'Description'),
                                 '${_res!['r_package_description'] ?? '-'}',
@@ -804,19 +950,19 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                             ],
                           ),
                         ),
-                        const SizedBox(width: 16),
+                        SizedBox(width: rs(context, 12)),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
                                 L('Concepto', 'Concept'),
-                                style: const TextStyle(
-                                  fontSize: 16,
+                                style: TextStyle(
+                                  fontSize: fs(context, 15),
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
-                              const SizedBox(height: 8),
+                              SizedBox(height: rs(context, 6)),
                               _kv(
                                 L('Tipo', 'Type'),
                                 '${_res!['r_concept'] ?? '-'}',
@@ -826,9 +972,8 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 18),
+                    SizedBox(height: rs(context, 14)),
 
-                    // Price summary
                     Row(
                       children: [
                         Expanded(
@@ -837,39 +982,41 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                             children: [
                               Text(
                                 L('Precio', 'Price'),
-                                style: const TextStyle(
-                                  fontSize: 16,
+                                style: TextStyle(
+                                  fontSize: fs(context, 15),
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
-                              const SizedBox(height: 6),
+                              SizedBox(height: rs(context, 4)),
                               _kv(
                                 L('Precio por paquete', 'Unit price'),
                                 '\$${(_res!['r_price_per_package'] ?? '-').toString()}',
                               ),
-                              const SizedBox(height: 2),
+                              SizedBox(height: rs(context, 2)),
                               Text(
                                 L('Total', 'Total price'),
-                                style: TextStyle(color: cs.onSurfaceVariant),
+                                style: TextStyle(
+                                  color: cs.onSurfaceVariant,
+                                  fontSize: fs(context, 12.5),
+                                ),
                               ),
                             ],
                           ),
                         ),
                         Text(
                           '\$${(_res!['r_total_price'] ?? '-').toString()}',
-                          style: const TextStyle(
-                            fontSize: 18,
+                          style: TextStyle(
+                            fontSize: fs(context, 17),
                             fontWeight: FontWeight.w900,
                           ),
                         ),
                       ],
                     ),
 
-                    const SizedBox(height: 16),
+                    SizedBox(height: rs(context, 12)),
                     Divider(color: cs.outlineVariant),
-                    const SizedBox(height: 12),
+                    SizedBox(height: rs(context, 10)),
 
-                    // Ver todos los paquetes
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton(
@@ -877,9 +1024,17 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                           backgroundColor: cs.primaryContainer,
                           foregroundColor: cs.primary,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(
+                              rs(context, 12),
+                            ),
                           ),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          padding: EdgeInsets.symmetric(
+                            vertical: rs(context, 12),
+                          ),
+                          textStyle: TextStyle(
+                            fontSize: fs(context, 14),
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                         onPressed: () {
                           final pkgs =
@@ -894,44 +1049,43 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                         },
                         child: Text(
                           L('Ver todos los paquetes', 'View All Packages'),
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                          ),
                         ),
                       ),
                     ),
 
-                    const SizedBox(height: 12),
+                    SizedBox(height: rs(context, 10)),
 
-                    // Derivaciones (resumen)
                     if ((_res!['r_derivations'] as List?)?.isNotEmpty ??
                         false) ...[
-                      const SizedBox(height: 6),
+                      SizedBox(height: rs(context, 4)),
                       Text(
                         L('Derivaciones de pago', 'Payment derivations'),
-                        style: const TextStyle(
-                          fontSize: 16,
+                        style: TextStyle(
+                          fontSize: fs(context, 15),
                           fontWeight: FontWeight.w800,
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      SizedBox(height: rs(context, 6)),
                       ...List<Map<String, dynamic>>.from(
                         (_res!['r_derivations'] as List),
                       ).map(
                         (d) => Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          padding: EdgeInsets.symmetric(
+                            vertical: rs(context, 4),
+                          ),
                           child: Row(
                             children: [
                               Expanded(
                                 child: Text(
                                   '${d['payment_method'] ?? '-'} • ${d['concepto'] ?? '-'}',
+                                  style: TextStyle(fontSize: fs(context, 13)),
                                 ),
                               ),
                               Text(
                                 '\$${(d['cash_amount'] ?? 0)} / \$${(d['card_amount'] ?? 0)} / \$${(d['transfer_amount'] ?? 0)}',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontWeight: FontWeight.w700,
+                                  fontSize: fs(context, 13),
                                 ),
                               ),
                             ],

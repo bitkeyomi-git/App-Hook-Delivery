@@ -5,15 +5,14 @@ plugins {
 }
 
 android {
-    namespace = "com.example.hook_deliveryprueba"
+    namespace = "com.hook.delivery"
 
-    compileSdk = 36
-    ndkVersion = "27.0.12077973"
+    compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.hook_deliveryprueba"
-        minSdk = 23              // CameraX (mobile_scanner) exige >= 23
-        targetSdk = 36
+        applicationId = "com.hook.delivery"
+        minSdk = 23          // requerido por CameraX/mobile_scanner
+        targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         multiDexEnabled = true
@@ -27,9 +26,18 @@ android {
         jvmTarget = "17"
     }
 
+    packaging {
+        resources {
+            excludes += setOf("/META-INF/{AL2.0,LGPL2.1}", "META-INF/DEPENDENCIES")
+        }
+    }
+
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("debug")
+            // Si habilitas minify:
+            // isMinifyEnabled = true
+            // proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 }
