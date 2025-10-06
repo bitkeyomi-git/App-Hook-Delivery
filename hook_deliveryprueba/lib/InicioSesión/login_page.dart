@@ -223,12 +223,12 @@ class _LoginPageState extends State<LoginPage> {
                         colorFilter: const ColorFilter.mode(
                             Colors.white, BlendMode.srcIn),
                         child: Image.asset(
-                          'assets/logoOBS.png',
+                          'assets/logo.png',
                           fit: BoxFit.contain,
                         ),
                       )
                     : Image.asset(
-                        'assets/logoOBS.png',
+                        'assets/logo.png',
                         fit: BoxFit.contain,
                       ),
               ),

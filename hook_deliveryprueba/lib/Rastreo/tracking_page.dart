@@ -7,10 +7,13 @@ import 'package:provider/provider.dart';
 import '../Configuraciones/app_localizations.dart';
 import '../Configuraciones/settings_controller.dart';
 import '../Inicio/home_page.dart' show kIsWeb;
+import 'package:flutter/foundation.dart';
 
-const String _TRACK_URL = 'https://4d0199a6e110.ngrok-free.app/get-service-info';
-const String _UPDATE_URL = 'https://4d0199a6e110.ngrok-free.app/update-service-status';
-const String _API_KEY    = 'yacjDEIxyrZPgAZMh83yUAiP86Y256QNkyhuix5qSgP7LnTQ4S';
+const String _TRACK_URL =
+    'https://api-ticket-6wly.onrender.com/get-servicio-info';
+const String _UPDATE_URL =
+    'https://api-ticket-6wly.onrender.com/update-service-status';
+const String _API_KEY = 'yacjDEIxyrZPgAZMh83yUAiP86Y256QNkyhuix5qSgP7LnTQ4S';
 
 class TrackShipmentPage extends StatefulWidget {
   final Map<String, dynamic> userInfo;
@@ -39,7 +42,7 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
   String? _selectedOfficeAction = 'Recibió'; // default del dropdown
 
   // --- Estatus del servicio ---
-  String? _selectedStatus;    // lo que el usuario elija en el pill
+  String? _selectedStatus; // lo que el usuario elija en el pill
   bool _savingStatus = false; // loading para guardar
 
   final List<String> _statusOptions = const [
@@ -49,10 +52,26 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
     'cancelado',
   ];
 
+  // Ya no quita tildes; solo pasa a minúsculas.
   String _normalizeStatus(String s) {
-    final v = s.trim().toLowerCase();
-    if (v == 'en tránsito') return 'en transito';
-    return v;
+    return s.trim().toLowerCase();
+  }
+
+  // Mapea la acción de oficina a una clave corta para el backend
+  String? _statusFromOfficeAction(String? action) {
+    switch ((action ?? '').toLowerCase()) {
+      case 'recibió':
+      case 'recibio':
+        return 'recibio';
+      case 'envió':
+      case 'envio':
+        return 'envio';
+      case 'devolvió':
+      case 'devolvio':
+        return 'devolvio';
+      default:
+        return null;
+    }
   }
 
   @override
@@ -160,18 +179,38 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
       _showSnack('No hay servicio cargado.');
       return;
     }
-    final id = _res!['r_id_service_and_delivery_data'];
+    final idRaw = _res!['r_id_service_and_delivery_data'];
+    final id = (idRaw is int) ? idRaw : int.tryParse('${idRaw ?? ''}');
     if (id == null) {
       _showSnack('ID de servicio no disponible.');
       return;
     }
 
+    // Si hay acción de oficina, priorízala; si no, usa el estatus elegido/actual
+    final officeActionStatus = _statusFromOfficeAction(_selectedOfficeAction);
     final chosen =
-        _selectedStatus ?? (_res!['r_status']?.toString().toLowerCase() ?? 'pendiente');
+        officeActionStatus ??
+        (_selectedStatus ??
+            (_res!['r_status']?.toString().toLowerCase() ?? 'pendiente'));
+
+    // Normaliza solo a minúsculas, conservando tildes si las hubiera
     final statusForApi = _normalizeStatus(chosen);
+
+    // Intentar obtener el id de oficina desde los datos del usuario
+    final officeId =
+        personal?['id_office'] ??
+        personal?['r_id_office'] ??
+        personal?['idOffice'];
 
     setState(() => _savingStatus = true);
     try {
+      // Armado del body. Enviamos id_office SOLO si es acción de oficina.
+      final body = <String, dynamic>{
+        "id": id,
+        "status": '${statusForApi} - ${personal?['r_name_office'] ?? '-'}',
+        "timezone": "America/Mexico_City",
+        if (officeActionStatus != null) "id_office": officeId,
+      };
       final resp = await http.post(
         Uri.parse(_UPDATE_URL),
         headers: {
@@ -180,29 +219,82 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
           'x-api-key': _API_KEY,
           'ngrok-skip-browser-warning': 'true',
         },
-        body: jsonEncode({
-          "id": id,
-          "status": statusForApi,
-          "timezone": "America/Mexico_City",
-        }),
+        body: jsonEncode(body),
       );
 
       if (resp.statusCode != 200) {
         throw Exception('HTTP ${resp.statusCode}: ${resp.body}');
       }
 
-      // Puedes validar respuesta aquí si tu API devuelve {status:"ok"}
-      // final body = jsonDecode(resp.body);
-
+      // Refleja en UI: si fue acción de oficina NO cambiamos el status visible;
+      // si fue un status normal, sí lo actualizamos.
       setState(() {
-        _selectedStatus = chosen;
-        _res!['r_status'] = statusForApi;
+        if (officeActionStatus == null) {
+          _selectedStatus = statusForApi;
+          _res!['r_status'] = statusForApi;
+        }
       });
-      _showSnack('Estatus actualizado a: $statusForApi');
+
+      _showSnack(
+        officeActionStatus != null
+            ? 'Acción registrada: $_selectedOfficeAction (${personal?['r_name_office'] ?? personal?['name_office'] ?? '-'})'
+            : 'Estatus actualizado a: $statusForApi',
+      );
     } catch (e) {
-      _showSnack('Error al actualizar estatus: $e');
+      _showSnack('Error al actualizar: $e');
     } finally {
       if (mounted) setState(() => _savingStatus = false);
+    }
+
+    // === Envío de correos UNO A UNO (sin cambiar tu endpoint) ===
+    Future<void> _postEmail(String email) async {
+      if (email.isEmpty) return;
+      final body = {
+        "to": email, // tu endpoint espera UNO
+        "user_name": personal?['r_name_office'] ?? 'Hook Delivery',
+        "service_delivery_id":
+            "${_res?['r_id_service_and_delivery_data'] ?? '-'}",
+        "timezone": "America/Mexico_City",
+        "new_status":
+            _selectedStatus ?? (_res?['r_status']?.toString() ?? 'actualizado'),
+        "timeUpdate": DateTime.now().toString().substring(0, 16),
+      };
+
+      final resp = await http.post(
+        Uri.parse('https://api-ticket-6wly.onrender.com/send-alert-package-plm'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'x-api-key': _API_KEY,
+          if (kIsWeb) 'ngrok-skip-browser-warning': 'true',
+        },
+        body: jsonEncode(body),
+      );
+
+      if (resp.statusCode < 200 || resp.statusCode >= 300) {
+        throw Exception('HTTP ${resp.statusCode}: ${resp.body}');
+      }
+    }
+
+    try {
+      final emails =
+          <String>[
+                (_res?['to'] ?? '').toString(),
+                (_res?['r_sender_email'] ?? '').toString(),
+                (_res?['r_recipient_email'] ?? '').toString(),
+              ]
+              .map((e) => e.trim())
+              .where((e) => e.contains('@'))
+              .toSet() // evitar duplicados
+              .toList();
+
+      for (final email in emails) {
+        await _postEmail(email);
+      }
+
+      _showSnack('Correo enviado a: ${emails.join(', ')}');
+    } catch (e) {
+      _showSnack('Error al enviar el correo: $e');
     }
   }
 
@@ -211,41 +303,41 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
 
   // ===== Widgets pequeños =====
   Widget _chip(String title, IconData icon) => Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 18),
-            const SizedBox(width: 8),
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-          ],
-        ),
-      );
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 18),
+        const SizedBox(width: 8),
+        Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+      ],
+    ),
+  );
 
   Widget _kv(String k, String v, {bool bold = false}) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Row(
-          children: [
-            Expanded(
-              flex: 4,
-              child: Text(k, style: const TextStyle(fontWeight: FontWeight.w700)),
-            ),
-            Expanded(
-              flex: 6,
-              child: Text(
-                v,
-                style: TextStyle(
-                  fontWeight: bold ? FontWeight.w800 : FontWeight.w400,
-                ),
-              ),
-            ),
-          ],
+    padding: const EdgeInsets.symmetric(vertical: 2),
+    child: Row(
+      children: [
+        Expanded(
+          flex: 4,
+          child: Text(k, style: const TextStyle(fontWeight: FontWeight.w700)),
         ),
-      );
+        Expanded(
+          flex: 6,
+          child: Text(
+            v,
+            style: TextStyle(
+              fontWeight: bold ? FontWeight.w800 : FontWeight.w400,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 
   void _showPackagesSheet(List pkgs) {
     showModalBottomSheet(
@@ -314,15 +406,6 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
     final cs = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          L('Rastrear mi envío', 'Track my shipment'),
-          style: TextStyle(color: _mainColor),
-        ),
-        backgroundColor: theme.scaffoldBackgroundColor,
-        foregroundColor: _mainColor,
-        elevation: 0,
-      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
         children: [
@@ -462,23 +545,28 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                         // Pill rojo con popup de estatus
                         PopupMenuButton<String>(
                           onSelected: (val) {
-                            setState(() => _selectedStatus = val);
+                            setState(() => _selectedStatus = val.toLowerCase());
                           },
                           itemBuilder: (_) => _statusOptions
-                              .map((s) => PopupMenuItem<String>(
-                                    value: s,
-                                    child: Text(s),
-                                  ))
+                              .map(
+                                (s) => PopupMenuItem<String>(
+                                  value: s,
+                                  child: Text(s),
+                                ),
+                              )
                               .toList(),
                           child: Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 6),
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.red.withOpacity(0.18),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
-                              ((_selectedStatus ?? _res!['r_status'] ?? '-') as String)
+                              ((_selectedStatus ?? _res!['r_status'] ?? '-')
+                                      as String)
                                   .toUpperCase(),
                               style: const TextStyle(
                                 fontWeight: FontWeight.w900,
@@ -540,7 +628,10 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                             DropdownButtonFormField<String>(
                               value: _selectedOfficeAction,
                               decoration: InputDecoration(
-                                labelText: L('Acción de oficina', 'Office Action'),
+                                labelText: L(
+                                  'Acción de oficina',
+                                  'Office Action',
+                                ),
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(12),
                                 ),
@@ -548,20 +639,28 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                               items: [
                                 DropdownMenuItem(
                                   value: 'Recibió',
-                                  child: Text('Recibió: ${personal?['r_name_office'] ?? '-'}'),
+                                  child: Text(
+                                    'Recibió: ${personal?['r_name_office'] ?? '-'}',
+                                  ),
                                 ),
                                 DropdownMenuItem(
                                   value: 'Envió',
-                                  child: Text('Envió: ${personal?['r_name_office'] ?? '-'}'),
+                                  child: Text(
+                                    'Envió: ${personal?['r_name_office'] ?? '-'}',
+                                  ),
                                 ),
                                 DropdownMenuItem(
                                   value: 'Devolvió',
-                                  child: Text('Devolvió: ${personal?['r_name_office'] ?? '-'}'),
+                                  child: Text(
+                                    'Devolvió: ${personal?['r_name_office'] ?? '-'}',
+                                  ),
                                 ),
                               ],
                               onChanged: (val) {
                                 setState(() => _selectedOfficeAction = val);
-                                _showSnack('Seleccionaste $val: ${personal?['r_name_office'] ?? '-'}');
+                                _showSnack(
+                                  'Seleccionaste $val: ${personal?['r_name_office'] ?? '-'}',
+                                );
                               },
                             ),
                             const SizedBox(height: 12),
@@ -588,7 +687,9 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                                   backgroundColor: _mainColor,
                                   foregroundColor: Colors.white,
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 14, vertical: 8),
+                                    horizontal: 14,
+                                    vertical: 8,
+                                  ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(10),
                                   ),
@@ -781,9 +882,12 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                           padding: const EdgeInsets.symmetric(vertical: 14),
                         ),
                         onPressed: () {
-                          final pkgs = (_res!['r_packages'] as List?) ?? const [];
+                          final pkgs =
+                              (_res!['r_packages'] as List?) ?? const [];
                           if (pkgs.isEmpty) {
-                            _showSnack(L('Sin paquetes para mostrar.', 'No packages.'));
+                            _showSnack(
+                              L('Sin paquetes para mostrar.', 'No packages.'),
+                            );
                           } else {
                             _showPackagesSheet(pkgs);
                           }
@@ -801,7 +905,8 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
                     const SizedBox(height: 12),
 
                     // Derivaciones (resumen)
-                    if ((_res!['r_derivations'] as List?)?.isNotEmpty ?? false) ...[
+                    if ((_res!['r_derivations'] as List?)?.isNotEmpty ??
+                        false) ...[
                       const SizedBox(height: 6),
                       Text(
                         L('Derivaciones de pago', 'Payment derivations'),

@@ -35,10 +35,12 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - assets/logo.png
     - assets/mx_flag.png
     - assets/us_flag.png
 
 flutter_icons:
   android: true
   ios: true
+  image_path: "assets/logo.png"
   

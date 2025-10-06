@@ -265,7 +265,7 @@ class _HomePageState extends State<HomePage> {
               decoration: BoxDecoration(color: mainColor),
               child: const Center(
                 child: Text(
-                  'HOOK OBS',
+                  'assets/logo.png',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 26,
