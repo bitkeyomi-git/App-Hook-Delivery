@@ -1,3 +1,4 @@
+//lib/Configuraciones/splash_screen.dart
 import 'package:flutter/material.dart';
 import 'dart:async';
 
