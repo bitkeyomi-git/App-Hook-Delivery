@@ -10,6 +10,175 @@ import '../Inicio/home_page.dart' show kIsWeb;
 import 'package:flutter/foundation.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+enum AppMsgType { success, error, info, warning }
+
+void showMsg(
+  BuildContext context, {
+  required String text,
+  AppMsgType type = AppMsgType.info,
+  Duration duration = const Duration(seconds: 3),
+}) {
+  final cs = Theme.of(context).colorScheme;
+  Color bg, fg;
+  IconData icon;
+  switch (type) {
+    case AppMsgType.success:
+      bg = cs.tertiaryContainer;
+      fg = cs.onTertiaryContainer;
+      icon = Icons.check_circle_rounded;
+      break;
+    case AppMsgType.error:
+      bg = cs.errorContainer;
+      fg = cs.onErrorContainer;
+      icon = Icons.error_rounded;
+      break;
+    case AppMsgType.warning:
+      bg = cs.secondaryContainer;
+      fg = cs.onSecondaryContainer;
+      icon = Icons.warning_amber_rounded;
+      break;
+    case AppMsgType.info:
+    default:
+      bg = cs.primaryContainer;
+      fg = cs.onPrimaryContainer;
+      icon = Icons.info_rounded;
+  }
+
+  final snack = SnackBar(
+    behavior: SnackBarBehavior.floating,
+    elevation: 0,
+    backgroundColor: Colors.transparent,
+    duration: duration,
+    content: Container(
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+            color: Colors.black.withOpacity(0.15),
+          ),
+        ],
+        border: Border.all(color: cs.outlineVariant.withOpacity(0.6)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Row(
+        children: [
+          Icon(icon, color: fg),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: fg, fontWeight: FontWeight.w600),
+            ),
+          ),
+          const SizedBox(width: 8),
+          InkWell(
+            onTap: () => ScaffoldMessenger.of(context).hideCurrentSnackBar(),
+            child: Icon(Icons.close_rounded, size: 20, color: fg),
+          ),
+        ],
+      ),
+    ),
+    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+  );
+
+  final m = ScaffoldMessenger.of(context);
+  m.hideCurrentSnackBar();
+  m.showSnackBar(snack);
+}
+
+/// ================== OVERLAY DEL ESCÁNER (TOP-LEVEL) ==================
+
+class _ScanOverlay extends StatelessWidget {
+  final ColorScheme colorScheme;
+  final String label;
+  const _ScanOverlay({required this.colorScheme, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    // Tamaño del recuadro adaptado por dispositivo (ancho de pantalla)
+    final w = MediaQuery.sizeOf(context).width;
+    final double boxW = w < 360 ? w * 0.78 : (w <= 400 ? w * 0.74 : w * 0.70);
+    final Size box = Size(boxW, boxW * 0.60); // rectángulo horizontal
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cx = constraints.maxWidth / 2;
+        final cy = constraints.maxHeight / 2.2;
+        final rect = Rect.fromCenter(
+          center: Offset(cx, cy),
+          width: box.width,
+          height: box.height,
+        );
+
+        return Stack(
+          children: [
+            // Sombreado con agujero
+            Positioned.fill(
+              child: CustomPaint(
+                painter: _HolePainter(
+                  rect: rect,
+                  overlayColor: Colors.black.withOpacity(0.45),
+                ),
+              ),
+            ),
+            // Marco
+            Positioned.fromRect(
+              rect: rect,
+              child: IgnorePointer(
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: colorScheme.primary, width: 3),
+                  ),
+                ),
+              ),
+            ),
+            // Texto guía
+            Positioned(
+              top: rect.bottom + 12,
+              left: 0,
+              right: 0,
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: colorScheme.onSurface.withOpacity(0.9),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _HolePainter extends CustomPainter {
+  final Rect rect;
+  final Color overlayColor;
+  _HolePainter({required this.rect, required this.overlayColor});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bg = Path()..addRect(Offset.zero & size);
+    final hole = Path()
+      ..addRRect(RRect.fromRectAndRadius(rect, const Radius.circular(14)));
+    final path = Path.combine(PathOperation.difference, bg, hole);
+    canvas.drawPath(path, Paint()..color = overlayColor);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// ================== PÁGINA ==================
+
 const String _TRACK_URL =
     'https://api-ticket-6wly.onrender.com/get-servicio-info';
 const String _UPDATE_URL =
@@ -114,7 +283,10 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
   Future<void> _track() async {
     final code = _guideCtrl.text.trim().replaceAll(RegExp(r'\s+'), '');
     if (!_isValid(code)) {
-      _showSnack(L('Ingresa solo números.', 'Digits only.'));
+      _showSnack(
+        L('Ingresa solo números.', 'Digits only.'),
+        type: AppMsgType.warning,
+      );
       return;
     }
     setState(() {
@@ -150,7 +322,23 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
 
       final list = (json['result'] as List?) ?? const [];
       if (list.isEmpty) {
-        throw Exception(L('Sin resultados para esa guía.', 'No results.'));
+        if (mounted) {
+          _res = null;
+          _selectedStatus = null;
+          _error = null;
+          _focus.requestFocus();
+          // feedback opcional:
+          // HapticFeedback.lightImpact();
+
+          _showSnack(
+            L(
+              'No encontramos esa guía. Verifica el número.',
+              'We couldn’t find that ID. Please check the number.',
+            ),
+            type: AppMsgType.warning,
+          );
+        }
+        return; // Salimos sin romper el flujo
       }
 
       _res = Map<String, dynamic>.from(list.first as Map);
@@ -225,7 +413,10 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
             : 'Estatus actualizado a: $statusForApi',
       );
     } catch (e) {
-      _showSnack('Error al actualizar: $e');
+      _showSnack(
+        'Estatus actualizado a: $statusForApi',
+        type: AppMsgType.success,
+      );
     } finally {
       if (mounted) setState(() => _savingStatus = false);
     }
@@ -274,12 +465,12 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
 
       _showSnack('Correo enviado a: ${emails.join(', ')}');
     } catch (e) {
-      _showSnack('Error al enviar el correo: $e');
+      _showSnack('Error al enviar el correo: $e', type: AppMsgType.error);
     }
   }
 
-  void _showSnack(String msg) =>
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  void _showSnack(String msg, {AppMsgType type = AppMsgType.info}) =>
+      showMsg(context, text: msg, type: type);
 
   // ====== SCAN: QR/Código de barras para r_id_service_and_delivery_data ======
   void _handleScannedValue(String raw) {
@@ -310,9 +501,12 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
 
   Future<void> _openScanner() async {
     bool handled = false;
+    final cs = Theme.of(context).colorScheme;
+
     final controller = MobileScannerController(
       detectionSpeed: DetectionSpeed.noDuplicates,
-      // facing: CameraFacing.back, // opcional
+      facing: CameraFacing.back,
+      torchEnabled: false,
       formats: const [
         BarcodeFormat.qrCode,
         BarcodeFormat.code128,
@@ -329,58 +523,134 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
       ],
     );
 
-    await showDialog(
+    await showModalBottomSheet(
       context: context,
-      barrierDismissible: true,
-      builder: (_) => Scaffold(
-        backgroundColor: Colors.black,
-        appBar: AppBar(
-          title: const Text('Escanear código'),
-          backgroundColor: Colors.black,
-          foregroundColor: Colors.white,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.close),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ],
-        ),
-        body: MobileScanner(
-          controller: controller,
-          fit: BoxFit.contain,
-          errorBuilder: (context, error) {
-            final code = error.errorCode;
-            final msg = code == MobileScannerErrorCode.permissionDenied
-                ? 'Permiso de cámara denegado.'
-                : 'Error de cámara: ${code.name}';
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(msg, style: const TextStyle(color: Colors.white)),
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        return Scaffold(
+          backgroundColor: cs.surface,
+          appBar: AppBar(
+            backgroundColor: cs.surface,
+            foregroundColor: cs.onSurface,
+            elevation: 0,
+            title: Text(L('Escanear código', 'Scan code')),
+            actions: [
+              IconButton(
+                tooltip: L('Cerrar', 'Close'),
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.of(context).pop(),
               ),
-            );
-          },
-          onDetect: (capture) {
-            if (handled) return;
-            final codes = capture.barcodes;
-            final raw = codes.isNotEmpty ? (codes.first.rawValue ?? '') : '';
-            if (raw.isEmpty) return;
-            handled = true;
-            Navigator.of(context).pop();
-            _handleScannedValue(raw);
-          },
-        ),
-      ),
-    );
+            ],
+          ),
+          body: Stack(
+            children: [
+              // Cámara
+              Positioned.fill(
+                child: MobileScanner(
+                  controller: controller,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error) {
+                    final msg =
+                        error.errorCode ==
+                            MobileScannerErrorCode.permissionDenied
+                        ? L(
+                            'Permiso de cámara denegado',
+                            'Camera permission denied',
+                          )
+                        : '${L('Error de cámara', 'Camera error')}: ${error.errorCode.name}';
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(msg, style: TextStyle(color: cs.onSurface)),
+                      ),
+                    );
+                  },
+                  onDetect: (capture) {
+                    if (handled) return;
+                    final raw = capture.barcodes.isNotEmpty
+                        ? (capture.barcodes.first.rawValue ?? '')
+                        : '';
+                    if (raw.isEmpty) return;
+                    handled = true;
+                    Navigator.of(context).pop();
+                    _handleScannedValue(raw);
+                  },
+                ),
+              ),
+
+              // Overlay
+              Positioned.fill(
+                child: _ScanOverlay(
+                  colorScheme: cs,
+                  label: L(
+                    'Alinea el código dentro del recuadro',
+                    'Align the code in the frame',
+                  ),
+                ),
+              ),
+
+              // Controles inferiores
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      // Linterna (escucha el estado desde el ValueListenable del controller)
+                      ValueListenableBuilder<MobileScannerState>(
+                        valueListenable: controller,
+                        builder: (context, state, __) {
+                          final torch = state.torchState;
+                          final on = torch == TorchState.on;
+                          final available = torch != TorchState.unavailable;
+                          return FilledButton.tonalIcon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: cs.inverseSurface.withOpacity(
+                                0.25,
+                              ),
+                            ),
+                            onPressed: available
+                                ? controller.toggleTorch
+                                : null,
+                            icon: Icon(on ? Icons.flash_on : Icons.flash_off),
+                            label: Text(
+                              on ? L('Linterna', 'Torch') : L('Apagada', 'Off'),
+                            ),
+                          );
+                        },
+                      ),
+                      // Cambiar cámara
+                      FilledButton.tonalIcon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: cs.inverseSurface.withOpacity(0.25),
+                        ),
+                        onPressed: controller.switchCamera,
+                        icon: const Icon(Icons.cameraswitch),
+                        label: Text(L('Cámara', 'Camera')),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    ).whenComplete(() {
+      controller.dispose();
+    });
   }
 
   // ====== RESPONSIVE UTILS ======
   double rs(BuildContext context, double base) {
     final w = MediaQuery.sizeOf(context).width;
-    if (w <= 340) return base * 0.85;
-    if (w <= 380) return base * 0.92;
-    if (w <= 420) return base * 0.98;
-    return base;
+    if (w <= 340) return base * 0.85; // teléfonos muy pequeños
+    if (w <= 380) return base * 0.92; // compactos
+    if (w <= 420) return base * 0.98; // medianos
+    return base; // resto
   }
 
   double fs(BuildContext context, double base) {
@@ -399,14 +669,23 @@ class _TrackShipmentPageState extends State<TrackShipmentPage> {
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Icon(icon, size: rs(context, 18)),
           SizedBox(width: rs(context, 8)),
-          Text(
-            title,
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: fs(context, 13),
+          // <- aquí permitimos que el texto se ajuste
+          Flexible(
+            child: Text(
+              title,
+              maxLines: 2, // permite 1 o 2 líneas
+              overflow: TextOverflow.ellipsis, // corta con "..."
+              softWrap: true, // puede hacer salto de línea
+              textAlign: TextAlign.start,
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: fs(context, 9),
+                height: 1.2,
+              ),
             ),
           ),
         ],

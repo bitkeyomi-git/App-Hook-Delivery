@@ -1,4 +1,4 @@
-package com.example.hook_deliveryprueba
+package com.hook.delivery
 
 import io.flutter.embedding.android.FlutterActivity
 

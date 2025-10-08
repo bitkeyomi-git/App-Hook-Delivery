@@ -11,7 +11,7 @@ android {
 
     defaultConfig {
         applicationId = "com.hook.delivery"
-        minSdk = 23          // requerido por CameraX/mobile_scanner
+        minSdk = flutter.minSdkVersion          // requerido por CameraX/mobile_scanner
         targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
